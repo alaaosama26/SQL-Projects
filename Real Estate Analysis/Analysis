@@ -1,0 +1,238 @@
+--------------------------------------------------- General Analysis ---------------------------------------------------
+-- 1 ● Total Sales
+SELECT 
+	FORMAT(SUM(saleprice), 'N0', 'en-US') AS Total_Sales
+FROM Sales
+
+-- 2 ● Total Clients
+SELECT 
+	COUNT(ClientID) AS Clients
+FROM Clients
+
+-- 3 ● Total Visits
+SELECT
+	COUNT(visitid) Total_Visits
+FROM visits
+
+-- 4 ● Total Properties
+SELECT
+	COUNT(PropertyID) AS Total_Properties
+FROM Properties
+
+
+--------------------------------------------------- Property Analytics -------------------------------------------------
+-- 1 ● Number of listed properties by type and location
+SELECT
+	PropertyType
+  , Location
+  , COUNT(PropertyID) AS Total_Properties
+FROM Properties
+GROUP BY PropertyType, Location
+ORDER BY PropertyType, Location, Total_Properties DESC
+
+-- 2 ● Average price per square meter per city
+SELECT
+    ROUND(AVG(PriceUSD/Size_sqm ), 2) Average_Price
+FROM Properties
+
+
+-- 3 ● Distribution of property types (Apartment, Villa, etc.)
+SELECT
+	PropertyType
+  , COUNT(PropertyID) AS Total_Properties
+FROM Properties
+GROUP BY PropertyType
+ORDER BY Total_Properties DESC
+
+-- 4 ● Top 10 most expensive properties
+WITH RankByPrice AS (SELECT
+						PropertyType
+					  , Location
+					  , PriceUSD
+					  , RANK() OVER(PARTITION BY PropertyType, Location ORDER BY PriceUSD DESC) AS Rank
+					FROM Properties
+					)
+SELECT Top (10)
+	PropertyType
+  , Location
+  , PriceUSD
+FROM RankByPrice
+WHERE Rank = 1
+ORDER BY PriceUSD DESC
+
+
+-- 6 ● Determine the percentage of properties that were sold below the listed price
+
+WITH Sold_Status_Table AS (SELECT 
+								propertytype
+							  , location
+							  , PriceUSD
+							  , SalePrice
+							  , CASE
+									WHEN SalePrice - PriceUSD > 0
+									THEN 0
+									ELSE 1
+								END AS Sold_Status
+							FROM Properties p
+							INNER JOIN sales s
+							ON p.propertyID = s.propertyID
+							)
+SELECT 
+	CAST(SUM(Sold_Status) * 100.0/ COUNT(*) AS DECIMAL(5,2)) AS Loss_Percentage
+
+FROM Sold_Status_Table
+
+/*SELECT 
+	FORMAT(MAX(PriceUSD), 'N0', 'en-US') Max_Price
+  , FORMAT(min(PriceUSD), 'N0', 'en-US') Min_Price
+  , FORMAT(avg(PriceUSD), 'N0', 'en-US') Anverage_Price
+FROM Properties*/
+
+--------------------------------------------------- 💵 Sales Performance -------------------------------------------------
+-- 1 ● Average sale value per property type
+SELECT
+	PropertyType
+  , ROUND(AVG(saleprice),2) Average_Price
+FROM properties p
+INNER JOIN sales s
+ON p.propertyid = s.propertyid
+GROUP BY PropertyType
+ORDER BY Average_Price
+
+-- 2 ● Conversion rate = (sales / visits) per property or agent
+SELECT
+	p.PropertyType
+  , p.Location
+  , CAST(COUNT(DISTINCT s.saleid) * 100.0 / COUNT(DISTINCT v.visitid) AS decimal (10,2)) Conversion_Rate
+FROM properties p
+LEFT JOIN sales s
+ON p.propertyid = s.propertyid
+LEFT JOIN visits v
+ON p.propertyid = v.propertyid
+GROUP BY p.PropertyType, p.Location
+ORDER BY p.PropertyType, p.Location
+
+-- 3 ● Time on market before sale
+SELECT 
+	p.PropertyType
+  , p.Location
+ -- , MAX(saledate) AS Sale_Date
+ -- , MIN(visitdate) AS Visit_Date
+  , DATEDIFF(DAY, MIN(visitdate), MAX(saledate)) Day_On_Market
+FROM properties p 
+INNER JOIN sales s
+ON p.propertyid = s.propertyid
+LEFT JOIN visits v
+ON p.propertyid = v.propertyid
+GROUP BY p.PropertyType
+  , p.Location
+ORDER BY Day_On_Market -- add no of visits
+
+----------------------------------------- Agent Performance -----------------------------------------
+-- 1 ● Number of sales per agent 
+SELECT 
+	CONCAT(FirstName, ' ', LastName) AS Agent
+  , COUNT(SaleID) No_Of_Sales
+FROM Agents a
+LEFT JOIN Sales s
+ON a.AgentID = s.AgentID
+GROUP BY CONCAT(FirstName, ' ', LastName)
+ORDER BY No_Of_Sales DESC
+
+-- 2 ● Number of client visits per agent 
+SELECT 
+	CONCAT(FirstName, ' ', LastName) AS Agent
+  , COUNT(VisitID) No_Of_Visits
+FROM Agents a
+LEFT JOIN Visits v
+ON a.AgentID = v.AgentID
+GROUP BY CONCAT(FirstName, ' ', LastName)
+ORDER BY No_Of_Visits DESC
+
+-- 3 ● Conversion rate per agent (visits → sales) 
+SELECT
+	CONCAT(FirstName, ' ', LastName) AS Agent
+  , CAST(COUNT(DISTINCT SALEID) * 100.0 / COUNT(DISTINCT VISITID) AS DECIMAL (10,2)) Conversion_Rate
+FROM Agents a
+LEFT JOIN Sales s
+ON a.AgentID = s.AgentID
+LEFT JOIN Visits v
+ON a.AgentID = v.AgentID 
+GROUP BY CONCAT(FirstName, ' ', LastName)
+ORDER BY Conversion_Rate DESC
+
+-- 4 ● Avg sale value handled by each agent 
+SELECT 
+	CONCAT(FirstName, ' ', LastName) AS Agent
+  , ROUND(AVG(SalePrice), 2) Average_Sale_Value
+FROM Agents a
+INNER JOIN Sales s
+ON a.AgentID = s.AgentID
+GROUP BY CONCAT(FirstName, ' ', LastName)
+ORDER BY Average_Sale_Value DESC
+
+----------------------------------------- Client Engagement -----------------------------------------
+-- 1 ● Number of properties visited per client 
+SELECT 
+	CONCAT(FirstName, ' ', LastName) AS Client
+  , COUNT(v.propertyID) No_Of_Visited_Properties
+FROM Clients c
+INNER JOIN Visits v
+ON c.ClientID = v.ClientID
+INNER JOIN Properties p
+ON v.PropertyID = p.PropertyID
+GROUP BY CONCAT(FirstName, ' ', LastName)
+ORDER BY No_Of_Visited_Properties DESC
+
+-- 2 ● Top clients by sale value 
+SELECT TOP (10)
+	CONCAT(FirstName, ' ', LastName) AS Clients
+  , ROUND(SUM(SalePrice), 2) Sale_Value
+FROM Clients c
+INNER JOIN Sales s
+ON c.ClientID = s.ClientID
+GROUP BY CONCAT(FirstName, ' ', LastName)
+ORDER BY Sale_Value DESC
+
+-- 3 ● First-time vs repeat buyers 
+SELECT
+	CONCAT(FirstName, ' ', LastName) AS Clients
+  , CASE 
+		WHEN COUNT(SaleID) = 1 
+		THEN 'First-time'
+		WHEN COUNT(SaleID) > 1 
+		THEN 'Repeat Buyer'
+	END AS Purshace_Statues
+FROM Clients c
+INNER JOIN Sales s
+ON c.ClientID = s.ClientID
+GROUP BY CONCAT(FirstName, ' ', LastName)
+-- 4 ● Region-based client interest (visits by city)
+SELECT
+	Location
+  , COUNT(VisitID) Total_Visits
+FROM Properties p
+LEFT JOIN Visits v
+ON p.PropertyID = v.PropertyID
+GROUP BY Location
+ORDER BY Total_Visits DESC
+
+-- 5 ● Identify the clients who purchased the most properties.
+SELECT TOP(10) WITH TIES
+	CONCAT(FirstName, ' ', LastName) AS Clients
+  , COUNT(SaleID) No_Of_Purchased_Properties
+FROM Clients c
+INNER JOIN Sales s
+ON c.ClientID = s.ClientID
+GROUP BY CONCAT(FirstName, ' ', LastName)
+ORDER BY No_Of_Purchased_Properties DESC
+
+SELECT 
+	COUNT(DISTINCT c.ClientID) AS Lead_Clients
+  , COUNT(DISTINCT v.ClientID) AS Prospects 
+  , COUNT(DISTINCT s.ClientID) AS Customers 
+FROM Clients c
+LEFT JOIN Sales s
+ON c.ClientID = s.ClientID
+LEFT JOIN Visits v
+ON c.ClientID = s.ClientID
