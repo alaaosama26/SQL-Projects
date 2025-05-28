@@ -1,0 +1,89 @@
+
+--------------------------------------- Client Table ----------------------------------------
+CREATE VIEW CLients AS
+SELECT
+       c.[ClientID]
+      ,[FirstName]
+      ,[LastName]
+	  ,CONCAT(FirstName, ' ',LastName) ClientName,
+	    CASE 
+        WHEN COUNT(v.VisitID) < 1 THEN 'No Visits'
+        WHEN COUNT(v.VisitID) = 1 THEN '1 Visit'
+        WHEN COUNT(v.VisitID) BETWEEN 2 AND 5 THEN '2–5 Visits'
+        WHEN COUNT(v.VisitID) BETWEEN 6 AND 10 THEN '6–10 Visits'
+        ELSE '10+ Visits'
+    END AS VisitGroup
+,
+
+    CASE
+        WHEN 
+            (SELECT COUNT(*) FROM Visits v WHERE v.ClientID = c.ClientID) = 0 AND 
+            (SELECT COUNT(*) FROM Sales s WHERE s.ClientID = c.ClientID) = 0
+            THEN 'Lead'
+
+        WHEN 
+            (SELECT COUNT(*) FROM Visits v WHERE v.ClientID = c.ClientID) > 0 AND 
+            (SELECT COUNT(*) FROM Sales s WHERE s.ClientID = c.ClientID) = 0
+            THEN 'Interested'
+
+        WHEN 
+            (SELECT COUNT(*) FROM Visits v WHERE v.ClientID = c.ClientID) > 0 AND 
+            (SELECT COUNT(*) FROM Sales s WHERE s.ClientID = c.ClientID) > 0 OR
+			(SELECT COUNT(*) FROM Visits v WHERE v.ClientID = c.ClientID) = 0 AND
+            (SELECT COUNT(*) FROM Sales s WHERE s.ClientID = c.ClientID) > 0
+            THEN 'Qualified Buyer'
+
+        ELSE 'Unknown'
+    END AS ClientType
+
+FROM Clients c
+LEFT JOIN Visits v ON c.ClientID = v.ClientID
+GROUP BY c.ClientID, c.FirstName, c.LastName
+
+--------------------------------------- Sales Table ------------------------------------------
+CREATE VIEW Sales AS
+SELECT
+    s.SaleID,
+    s.ClientID,
+    s.PropertyID,
+	s.AgentID,
+	s.SaleDate,
+    p.PriceUSD AS ListedPrice,
+
+    -- Deal Status
+    CASE 
+        WHEN s.SalePrice < p.PriceUSD THEN 'Loss'
+        WHEN s.SalePrice = p.PriceUSD THEN 'Break Even'
+        ELSE 'Profit'
+    END AS DealStatus,
+
+    -- Loss %
+    CASE 
+        WHEN s.SalePrice < p.PriceUSD 
+        THEN CAST((p.PriceUSD - s.SalePrice) * 100.0 / p.PriceUSD AS DECIMAL(5,2))
+        ELSE 0
+    END AS LossPercentage
+
+FROM Sales s
+JOIN Properties p ON s.PropertyID = p.PropertyID
+
+--------------------------------------- Properties Table ------------------------------------------
+CREATE VIEW Agentview AS
+SELECT [AgentID]
+      ,[FirstName]
+      ,[LastName]
+      ,[Email]
+	  ,CONCAT(FirstName, ' ',LastName) AgentName
+FROM Agents
+WHERE AgentID IS NOT NULL
+
+
+--------------------------------------- Agent Table ------------------------------------------
+CREATE VIEW Agentview AS
+SELECT [AgentID]
+      ,[FirstName]
+      ,[LastName]
+      ,[Email]
+	  ,CONCAT(FirstName, ' ',LastName) AgentName
+FROM Agents
+WHERE AgentID IS NOT NULL
